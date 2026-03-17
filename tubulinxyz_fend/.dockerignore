@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.git/
+nightingale/node_modules/
+nightingale/packages/*/node_modules/
+nightingale/packages/*/dist/
+.env*
+*.pem
+coverage/
+out/
+build/
+*.tsbuildinfo
+public/output/
+public/__old_output/
+notes/
