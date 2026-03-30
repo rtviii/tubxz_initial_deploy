@@ -2,35 +2,50 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+TRASH_DIR="$SCRIPT_DIR/.trash"
 
-# Clone source repos (fresh each time to ensure latest code)
-rm -rf "$SCRIPT_DIR/tubulinxyz_src"
-rm -rf "$SCRIPT_DIR/tubulinxyz_fend_src"
+# --- --hard flag: nuke everything and start fresh ---
+if [ "$1" = "--hard" ]; then
+    echo "This will:"
+    echo "  - Stop and remove all containers and volumes (neo4j data, logs, etc.)"
+    echo "  - Delete cloned source repos"
+    echo "  - Move .env to .trash/ (recoverable)"
+    echo ""
+    read -p "Are you sure? [y/N] " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "Aborted."
+        exit 0
+    fi
 
-git clone https://github.com/rtviii/tubulinxyz.git      "$SCRIPT_DIR/tubulinxyz_src"
-git clone https://github.com/rtviii/tubulinxyz_fend.git "$SCRIPT_DIR/tubulinxyz_fend_src"
+    echo "Tearing down containers and volumes..."
+    cd "$SCRIPT_DIR" && docker compose down -v 2>/dev/null || true
 
-# Copy the Linux MUSCLE binary into the backend source
-# (Backend Dockerfile lives in the source repo, no injection needed)
-cp "$SCRIPT_DIR/muscle_linux" "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
-chmod +x "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
+    echo "Removing cloned repos..."
+    rm -rf "$SCRIPT_DIR/tubulinxyz_src" "$SCRIPT_DIR/tubulinxyz_fend_src"
 
-# Frontend Dockerfile still lives in the deploy repo (TODO: move to frontend source repo)
-cp "$SCRIPT_DIR/tubulinxyz_fend/Dockerfile"    "$SCRIPT_DIR/tubulinxyz_fend_src/Dockerfile"
-cp "$SCRIPT_DIR/tubulinxyz_fend/.dockerignore" "$SCRIPT_DIR/tubulinxyz_fend_src/.dockerignore"
+    if [ -f "$ENV_FILE" ]; then
+        mkdir -p "$TRASH_DIR"
+        mv "$ENV_FILE" "$TRASH_DIR/.env.$(date +%Y%m%d_%H%M%S)"
+        echo "Moved .env to $TRASH_DIR/"
+    fi
 
-mkdir -p "$SCRIPT_DIR/deploy/nginx/certs"
-
-# --- Environment file handling ---
-ENV_FILE="$SCRIPT_DIR/deploy/.env"
-
-if [ ! -f "$ENV_FILE" ]; then
-    cp "$SCRIPT_DIR/deploy/.env.example" "$ENV_FILE"
-    echo "Created deploy/.env from .env.example -- fill it in before running setup.sh again."
+    echo "Hard reset complete. Run ./setup.sh to start fresh."
     exit 0
 fi
 
-# Source the env file
+# --- Step 1: Environment file (before anything else) ---
+if [ ! -f "$ENV_FILE" ]; then
+    cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"
+    echo ""
+    echo "Created .env from .env.example."
+    echo "Edit it now:  $ENV_FILE"
+    echo "Then re-run:  ./setup.sh"
+    echo ""
+    exit 0
+fi
+
+# Source and validate env
 while IFS= read -r line || [ -n "$line" ]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
     key="${line%%=*}"
@@ -38,7 +53,6 @@ while IFS= read -r line || [ -n "$line" ]; do
     export "$key=$val"
 done < "$ENV_FILE"
 
-# --- Validate required variables ---
 required_vars=(
     NEO4J_USER
     NEO4J_PASSWORD
@@ -56,36 +70,66 @@ for var in "${required_vars[@]}"; do
 done
 
 if [ ${#missing[@]} -gt 0 ]; then
-    echo "ERROR: The following required variables are not set in deploy/.env:"
+    echo "ERROR: The following required variables are not set in .env:"
     for v in "${missing[@]}"; do
         echo "  $v"
     done
     exit 1
 fi
 
-# --- Security: auto-generate SECRET_KEY if it's still the placeholder ---
+# Auto-generate SECRET_KEY if placeholder
 if [ "$SECRET_KEY" = "changeme" ]; then
     NEW_KEY=$(openssl rand -hex 32)
     sed -i.bak "s/SECRET_KEY=changeme/SECRET_KEY=$NEW_KEY/" "$ENV_FILE"
     rm -f "$ENV_FILE.bak"
-    echo "Generated random SECRET_KEY (replaced 'changeme' in .env)."
+    echo "Generated random SECRET_KEY."
 fi
 
-# --- Ensure data directory exists on the host ---
 mkdir -p "$TUBETL_DATA_HOST"
+mkdir -p "$SCRIPT_DIR/nginx/certs"
 
-echo "All required variables present. Rebuilding containers..."
-cd "$SCRIPT_DIR/deploy" && docker compose down && docker compose build --no-cache && docker compose up -d
+# --- Step 2: Get source code ---
+USE_LOCAL=false
+for arg in "$@"; do
+    [ "$arg" = "--local" ] && USE_LOCAL=true
+done
+
+rm -rf "$SCRIPT_DIR/tubulinxyz_src"
+rm -rf "$SCRIPT_DIR/tubulinxyz_fend_src"
+
+if [ "$USE_LOCAL" = true ]; then
+    LOCAL_BACKEND="${LOCAL_BACKEND:-/Users/rtviii/dev/tubulinxyz}"
+    LOCAL_FRONTEND="${LOCAL_FRONTEND:-/Users/rtviii/dev/fend_tubulinxyz}"
+
+    echo "Using local sources: $LOCAL_BACKEND, $LOCAL_FRONTEND"
+    mkdir -p "$SCRIPT_DIR/tubulinxyz_src" "$SCRIPT_DIR/tubulinxyz_fend_src"
+    git -C "$LOCAL_BACKEND" archive HEAD | tar -x -C "$SCRIPT_DIR/tubulinxyz_src"
+    rsync -a --exclude='.git' --exclude='node_modules' --exclude='venv' --exclude='TUBETL_DATA' --exclude='.etetoolkit' "$LOCAL_BACKEND/" "$SCRIPT_DIR/tubulinxyz_src/"
+    git -C "$LOCAL_FRONTEND" archive HEAD | tar -x -C "$SCRIPT_DIR/tubulinxyz_fend_src"
+    rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' "$LOCAL_FRONTEND/" "$SCRIPT_DIR/tubulinxyz_fend_src/"
+else
+    echo "Cloning repos from GitHub..."
+    git clone https://github.com/rtviii/tubulinxyz.git      "$SCRIPT_DIR/tubulinxyz_src"
+    git clone https://github.com/rtviii/tubulinxyz_fend.git  "$SCRIPT_DIR/tubulinxyz_fend_src"
+fi
+
+cp "$SCRIPT_DIR/muscle_linux" "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
+chmod +x "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
+
+# --- Step 3: Build and start ---
+echo "All set. Building containers..."
+cd "$SCRIPT_DIR" && docker compose down && docker compose build --no-cache && docker compose up -d
 
 echo ""
-echo "Deployment started. Services:"
-echo "  - neo4j:     waiting for health check..."
-echo "  - init:      will run DB bootstrap (first deploy may take 2-3 hours to collect all structures)"
-echo "  - backend:   starts after init completes"
-echo "  - scheduler: weekly ingestion cron (Sundays 3am UTC)"
-echo "  - frontend:  starts after backend is healthy"
-echo "  - nginx:     http on port 80"
+echo "Deployment started. All services come up immediately."
 echo ""
-echo "Monitor progress: docker compose -f deploy/docker-compose.yml logs -f init"
-echo "Check health:     curl http://localhost/api/health"
-echo "Check ingestion:  curl http://localhost/api/ingest-status"
+echo "  neo4j:      database"
+echo "  backend:    API (starts after neo4j healthy)"
+echo "  frontend:   UI (starts after backend healthy)"
+echo "  nginx:      reverse proxy on port 80"
+echo "  bootstrap:  background DB init + structure collection"
+echo "  scheduler:  weekly ingestion cron (Sundays 3am UTC)"
+echo ""
+echo "Monitor bootstrap: curl http://localhost/api/bootstrap-status"
+echo "Check health:      curl http://localhost/api/health"
+echo "Watch logs:        docker compose logs -f bootstrap"

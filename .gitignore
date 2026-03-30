@@ -1,4 +1,5 @@
 .env
 notes.md
-tubulinxyz_fend_src
-tubulinxyz_src
+tubulinxyz_src/
+tubulinxyz_fend_src/
+.trash/

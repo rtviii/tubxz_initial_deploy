@@ -27,11 +27,12 @@ services:
         limits:
           memory: 4G
 
-  # One-shot service: initializes DB constraints, phylogeny, and bootstraps data on first deploy.
-  # Exits after completion. Idempotent -- safe to re-run.
-  init:
+  # Background service: initializes DB, collects structures, uploads them.
+  # Runs on every deploy. Idempotent -- detects what's already done and skips it.
+  # Writes progress to /var/log/tubxz/bootstrap_status.json (shared with backend).
+  bootstrap:
     build:
-      context: ../tubulinxyz_src
+      context: ./tubulinxyz_src
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
@@ -42,11 +43,12 @@ services:
       NCBI_TAXA_SQLITE: /app/.etetoolkit/taxa.sqlite
     volumes:
       - ${TUBETL_DATA_HOST}:/mnt/tubetl_data
+      - ingest_logs:/var/log/tubxz
     depends_on:
       neo4j:
         condition: service_healthy
     entrypoint: ["/bin/sh", "/app/scripts/init_and_seed.sh"]
-    restart: "no"
+    restart: unless-stopped
     logging:
       driver: json-file
       options:
@@ -59,7 +61,7 @@ services:
 
   backend:
     build:
-      context: ../tubulinxyz_src
+      context: ./tubulinxyz_src
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
@@ -76,8 +78,6 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      init:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -98,7 +98,7 @@ services:
 
   scheduler:
     build:
-      context: ../tubulinxyz_src
+      context: ./tubulinxyz_src
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
@@ -113,8 +113,6 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      init:
-        condition: service_completed_successfully
     entrypoint: ["/bin/sh", "/app/scripts/start_scheduler.sh"]
     restart: unless-stopped
     logging:
@@ -129,7 +127,7 @@ services:
 
   frontend:
     build:
-      context: ../tubulinxyz_fend_src
+      context: ./tubulinxyz_fend_src
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
@@ -173,7 +171,7 @@ services:
   # Manual ingest service (kept for ad-hoc CLI access)
   ingest:
     build:
-      context: ../tubulinxyz_src
+      context: ./tubulinxyz_src
     profiles: [ingest]
     networks:
       - default
