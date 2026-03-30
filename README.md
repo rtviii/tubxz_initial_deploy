@@ -6,7 +6,8 @@ Deployment wrapper for [tube.xyz](https://tube.xyz) -- a structural biology data
 
 ```bash
 ./setup.sh              # first run: creates .env, tells you to fill it in
-# edit .env
+# edit .env 
+# (The only variable that really matters for prototyping locally or on a VM is that TUBETL_HOST is a valid path )
 ./setup.sh              # second run: clones repos, builds, deploys
 ```
 
