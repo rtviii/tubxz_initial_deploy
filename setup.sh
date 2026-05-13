@@ -9,7 +9,7 @@ TRASH_DIR="$SCRIPT_DIR/.trash"
 if [ "$1" = "--hard" ]; then
     echo "This will:"
     echo "  - Stop and remove all containers and volumes (neo4j data, logs, etc.)"
-    echo "  - Delete cloned source repos"
+    echo "  - Delete locally-cloned source repos (if present)"
     echo "  - Move .env to .trash/ (recoverable)"
     echo ""
     read -p "Are you sure? [y/N] " confirm
@@ -21,7 +21,7 @@ if [ "$1" = "--hard" ]; then
     echo "Tearing down containers and volumes..."
     cd "$SCRIPT_DIR" && docker compose down -v 2>/dev/null || true
 
-    echo "Removing cloned repos..."
+    echo "Removing local source dirs (if any)..."
     rm -rf "$SCRIPT_DIR/tubulinxyz_src" "$SCRIPT_DIR/tubulinxyz_fend_src"
 
     if [ -f "$ENV_FILE" ]; then
@@ -59,7 +59,6 @@ required_vars=(
     NEO4J_CURRENTDB
     SECRET_KEY
     TUBETL_DATA_HOST
-    NEXT_PUBLIC_API_URL
 )
 
 missing=()
@@ -88,37 +87,38 @@ fi
 mkdir -p "$TUBETL_DATA_HOST"
 mkdir -p "$SCRIPT_DIR/nginx/certs"
 
-# --- Step 2: Get source code ---
+# --- Step 2: Decide path: pull pre-built images, or build from local source ---
 USE_LOCAL=false
 for arg in "$@"; do
     [ "$arg" = "--local" ] && USE_LOCAL=true
 done
 
-rm -rf "$SCRIPT_DIR/tubulinxyz_src"
-rm -rf "$SCRIPT_DIR/tubulinxyz_fend_src"
+cd "$SCRIPT_DIR"
 
 if [ "$USE_LOCAL" = true ]; then
     LOCAL_BACKEND="${LOCAL_BACKEND:-/Users/rtviii/dev/tubulinxyz}"
     LOCAL_FRONTEND="${LOCAL_FRONTEND:-/Users/rtviii/dev/fend_tubulinxyz}"
 
-    echo "Using local sources: $LOCAL_BACKEND, $LOCAL_FRONTEND"
+    echo "Local mode: building images from $LOCAL_BACKEND and $LOCAL_FRONTEND"
+
+    rm -rf "$SCRIPT_DIR/tubulinxyz_src" "$SCRIPT_DIR/tubulinxyz_fend_src"
     mkdir -p "$SCRIPT_DIR/tubulinxyz_src" "$SCRIPT_DIR/tubulinxyz_fend_src"
-    git -C "$LOCAL_BACKEND" archive HEAD | tar -x -C "$SCRIPT_DIR/tubulinxyz_src"
-    rsync -a --exclude='.git' --exclude='node_modules' --exclude='venv' --exclude='TUBETL_DATA' --exclude='.etetoolkit' "$LOCAL_BACKEND/" "$SCRIPT_DIR/tubulinxyz_src/"
-    git -C "$LOCAL_FRONTEND" archive HEAD | tar -x -C "$SCRIPT_DIR/tubulinxyz_fend_src"
-    rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' "$LOCAL_FRONTEND/" "$SCRIPT_DIR/tubulinxyz_fend_src/"
+
+    rsync -a --exclude='.git' --exclude='node_modules' --exclude='venv' \
+              --exclude='TUBETL_DATA' --exclude='.etetoolkit' \
+              "$LOCAL_BACKEND/" "$SCRIPT_DIR/tubulinxyz_src/"
+    rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' \
+              "$LOCAL_FRONTEND/" "$SCRIPT_DIR/tubulinxyz_fend_src/"
+
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml build
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 else
-    echo "Cloning repos from GitHub..."
-    git clone https://github.com/rtviii/tubulinxyz.git      "$SCRIPT_DIR/tubulinxyz_src"
-    git clone https://github.com/rtviii/tubulinxyz_fend.git  "$SCRIPT_DIR/tubulinxyz_fend_src"
+    echo "Pulling pre-built images from registry..."
+    docker compose pull
+    docker compose down
+    docker compose up -d
 fi
-
-cp "$SCRIPT_DIR/muscle_linux" "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
-chmod +x "$SCRIPT_DIR/tubulinxyz_src/muscle3.8.1"
-
-# --- Step 3: Build and start ---
-echo "All set. Building containers..."
-cd "$SCRIPT_DIR" && docker compose down && docker compose build --no-cache && docker compose up -d
 
 echo ""
 echo "Deployment started. All services come up immediately."

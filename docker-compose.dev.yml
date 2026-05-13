@@ -1,0 +1,43 @@
+# Local-build override. Used by `./setup.sh --local`.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml build
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# This rebuilds the backend and frontend images from local source dirs
+# (./tubulinxyz_src and ./tubulinxyz_fend_src, populated by setup.sh --local
+# from /Users/rtviii/dev/tubulinxyz and /Users/rtviii/dev/fend_tubulinxyz).
+#
+# pull_policy: build prevents docker compose from trying to pull the GHCR image
+# when a local one exists.
+
+services:
+  bootstrap:
+    build:
+      context: ./tubulinxyz_src
+    image: tubulinxyz-local:dev
+    pull_policy: build
+
+  backend:
+    build:
+      context: ./tubulinxyz_src
+    image: tubulinxyz-local:dev
+    pull_policy: build
+
+  scheduler:
+    build:
+      context: ./tubulinxyz_src
+    image: tubulinxyz-local:dev
+    pull_policy: build
+
+  ingest:
+    build:
+      context: ./tubulinxyz_src
+    image: tubulinxyz-local:dev
+    pull_policy: build
+
+  frontend:
+    build:
+      context: ./tubulinxyz_fend_src
+    image: tubulinxyz-frontend-local:dev
+    pull_policy: build
