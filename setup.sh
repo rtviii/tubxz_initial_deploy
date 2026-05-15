@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 TRASH_DIR="$SCRIPT_DIR/.trash"
 
+# Apple Silicon: our images are built linux/amd64 only (matches PSI's VM).
+# Force the platform so docker pulls the amd64 manifest and runs it via Rosetta.
+# Harmless on Linux hosts (where the native arch is amd64 already).
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+    export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
 # --- --hard flag: nuke everything and start fresh ---
 if [ "$1" = "--hard" ]; then
     echo "This will:"
