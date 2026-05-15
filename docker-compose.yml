@@ -75,6 +75,16 @@ services:
       TUBETL_DATA: /mnt/tubetl_data
       NCBI_TAXA_SQLITE: /app/.etetoolkit/taxa.sqlite
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # NL translator (search bar). Provider picks which client + key to use.
+      # See .env.example for the full list of supported variables.
+      NL_TRANSLATOR_PROVIDER: ${NL_TRANSLATOR_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENROUTER_REFERER: ${OPENROUTER_REFERER:-}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-}
     volumes:
       - ${TUBETL_DATA_HOST}:/mnt/tubetl_data
       - ingest_logs:/var/log/tubxz:ro
