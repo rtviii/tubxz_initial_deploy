@@ -44,6 +44,7 @@ fi
 # --- Step 1: Environment file (before anything else) ---
 if [ ! -f "$ENV_FILE" ]; then
     cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
     echo ""
     echo "Created .env from .env.example."
     echo "Edit it now:  $ENV_FILE"
@@ -51,6 +52,11 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     exit 0
 fi
+
+# Lock down .env perms on every run. It holds NEO4J_PASSWORD, SECRET_KEY,
+# and the LLM API key -- if the file was created by hand with a loose
+# umask, this puts it back to owner-only.
+chmod 600 "$ENV_FILE"
 
 # Source and validate env
 while IFS= read -r line || [ -n "$line" ]; do
@@ -83,12 +89,30 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
+# Neo4j 5 refuses to start with a password under 8 chars; the symptom on
+# startup is unhelpful ("backend can't reach neo4j"), so catch it early.
+if [ ${#NEO4J_PASSWORD} -lt 8 ]; then
+    echo "ERROR: NEO4J_PASSWORD must be at least 8 characters (Neo4j 5 requirement)."
+    exit 1
+fi
+
 # Auto-generate SECRET_KEY if placeholder
 if [ "$SECRET_KEY" = "changeme" ]; then
     NEW_KEY=$(openssl rand -hex 32)
     sed -i.bak "s/SECRET_KEY=changeme/SECRET_KEY=$NEW_KEY/" "$ENV_FILE"
     rm -f "$ENV_FILE.bak"
+    chmod 600 "$ENV_FILE"   # preserve perms across the sed regen
     echo "Generated random SECRET_KEY."
+fi
+
+# Soft warn if no LLM key is set. The catalogue + structure pages work
+# without it; only the natural-language search bar will 502.
+if [ -z "$OPENROUTER_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+    echo ""
+    echo "WARNING: No LLM API key set (OPENROUTER_API_KEY / OPENAI_API_KEY /"
+    echo "         ANTHROPIC_API_KEY). The natural-language search bar will"
+    echo "         return errors. The rest of the site will work normally."
+    echo ""
 fi
 
 mkdir -p "$TUBETL_DATA_HOST"
@@ -103,8 +127,14 @@ done
 cd "$SCRIPT_DIR"
 
 if [ "$USE_LOCAL" = true ]; then
-    LOCAL_BACKEND="${LOCAL_BACKEND:-/Users/rtviii/dev/tubulinxyz}"
-    LOCAL_FRONTEND="${LOCAL_FRONTEND:-/Users/rtviii/dev/fend_tubulinxyz}"
+    if [ -z "$LOCAL_BACKEND" ] || [ -z "$LOCAL_FRONTEND" ]; then
+        echo "ERROR: --local mode requires LOCAL_BACKEND and LOCAL_FRONTEND env vars."
+        echo "       Example:"
+        echo "         LOCAL_BACKEND=/path/to/tubulinxyz \\"
+        echo "         LOCAL_FRONTEND=/path/to/fend_tubulinxyz \\"
+        echo "         ./setup.sh --local"
+        exit 1
+    fi
 
     echo "Local mode: building images from $LOCAL_BACKEND and $LOCAL_FRONTEND"
 
@@ -127,16 +157,39 @@ else
     docker compose up -d
 fi
 
-echo ""
-echo "Deployment started. All services come up immediately."
-echo ""
-echo "  neo4j:      database"
-echo "  backend:    API (starts after neo4j healthy)"
-echo "  frontend:   UI (starts after backend healthy)"
-echo "  nginx:      reverse proxy on port 80"
-echo "  bootstrap:  background DB init + structure collection"
-echo "  scheduler:  weekly ingestion cron (Sundays 3am UTC)"
-echo ""
-echo "Monitor bootstrap: curl http://localhost/api/bootstrap-status"
-echo "Check health:      curl http://localhost/api/health"
-echo "Watch logs:        docker compose logs -f bootstrap"
+# --- Final summary ---
+if [ -n "$OPENROUTER_API_KEY" ] || [ -n "$OPENAI_API_KEY" ]; then
+    LLM_STATUS="enabled (OpenAI-compatible / OpenRouter)"
+elif [ -n "$ANTHROPIC_API_KEY" ]; then
+    LLM_STATUS="enabled (Anthropic direct)"
+else
+    LLM_STATUS="DISABLED (no API key set; search bar will 502)"
+fi
+
+cat <<EOF
+
+─────────────────────────────────────────────────────────────
+  Deployment started.
+─────────────────────────────────────────────────────────────
+
+  SERVICES
+    neo4j        graph database (internal network only)
+    backend      FastAPI
+    frontend     Next.js UI
+    nginx        reverse proxy on 80/443
+    bootstrap    background ETL (running, ~2-3h on fresh deploy)
+    scheduler    weekly cron, Sundays 03:00 UTC
+
+  STATUS
+    Site         http://localhost/
+    LLM search   ${LLM_STATUS}
+    Bootstrap    first run takes ~2-3h; catalogue fills incrementally
+
+  MONITOR
+    curl http://localhost/api/health
+    curl http://localhost/api/bootstrap-status | jq .
+    docker compose logs -f bootstrap
+
+─────────────────────────────────────────────────────────────
+
+EOF

@@ -1,9 +1,13 @@
 services:
   neo4j:
     image: neo4j:5
-    ports:
-      - "7687:7687"
-      - "7474:7474"   # browser UI, optional
+    # No `ports:` block by design. The bolt protocol (7687) and the browser
+    # UI (7474) are only reachable from other containers on the same Docker
+    # network, where they need no auth-at-the-edge protection. Backend,
+    # bootstrap, scheduler, and ingest reach neo4j at bolt://neo4j:7687 via
+    # Docker DNS. To debug from the host: `docker compose exec neo4j
+    # cypher-shell -u $NEO4J_USER -p $NEO4J_PASSWORD`, or temporarily bind
+    # `127.0.0.1:7474:7474` and ssh-tunnel.
     environment:
       NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       NEO4J_server_memory_heap_initial__size: 1G
