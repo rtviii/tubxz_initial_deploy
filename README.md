@@ -64,7 +64,6 @@ Copy `.env.example` to `.env`. Required:
 ```
 NEO4J_USER            default: neo4j
 NEO4J_PASSWORD        at least 8 characters
-NEO4J_CURRENTDB       must be "neo4j" (Community Edition only)
 SECRET_KEY            auto-generated on first deploy if left as "changeme"
 TUBETL_DATA_HOST      absolute path on host for structure data (~4GB)
 ```

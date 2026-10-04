@@ -1,6 +1,9 @@
 services:
   neo4j:
-    image: neo4j:5
+    # Community edition on the 5.x LTS line, pinned explicitly. The backend
+    # schema (cli.py init-db) is CI-tested against this exact image; do not
+    # switch to -enterprise or rely on Enterprise-only features.
+    image: neo4j:5.26-community
     # No `ports:` block by design. The bolt protocol (7687) and the browser
     # UI (7474) are only reachable from other containers on the same Docker
     # network, where they need no auth-at-the-edge protection. Backend,
@@ -16,8 +19,11 @@ services:
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+    # Plain HTTP probe instead of cypher-shell: cypher-shell is a JVM that has to
+    # boot on every check (~6s under amd64 emulation on Apple Silicon, which
+    # exceeds the timeout and leaves neo4j "unhealthy" forever).
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -44,7 +50,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      NEO4J_CURRENTDB: ${NEO4J_CURRENTDB}
+      NEO4J_CURRENTDB: neo4j
       TUBXZ_ROOT: /app
       TUBETL_DATA: /mnt/tubetl_data
       NCBI_TAXA_SQLITE: /app/.etetoolkit/taxa.sqlite
@@ -73,7 +79,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      NEO4J_CURRENTDB: ${NEO4J_CURRENTDB}
+      NEO4J_CURRENTDB: neo4j
       SECRET_KEY: ${SECRET_KEY}
       TUBXZ_ROOT: /app
       TUBETL_DATA: /mnt/tubetl_data
@@ -120,7 +126,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      NEO4J_CURRENTDB: ${NEO4J_CURRENTDB}
+      NEO4J_CURRENTDB: neo4j
       TUBXZ_ROOT: /app
       TUBETL_DATA: /mnt/tubetl_data
       NCBI_TAXA_SQLITE: /app/.etetoolkit/taxa.sqlite
@@ -194,7 +200,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      NEO4J_CURRENTDB: ${NEO4J_CURRENTDB}
+      NEO4J_CURRENTDB: neo4j
       TUBXZ_ROOT: /app
       TUBETL_DATA: /mnt/tubetl_data
       NCBI_TAXA_SQLITE: /app/.etetoolkit/taxa.sqlite

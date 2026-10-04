@@ -14,7 +14,7 @@ images, the rest stock.
 
 | Service    | Image                                              | What it does |
 |------------|----------------------------------------------------|--------------|
-| neo4j      | `neo4j:5`                                          | Graph DB. Stores Structure, Entity, Instance, Variant, Modification, PhylogenyNode nodes. |
+| neo4j      | `neo4j:5.26-community`                             | Graph DB. Stores Structure, Entity, Instance, Variant, Modification, PhylogenyNode nodes. |
 | backend    | `ghcr.io/rtviii/tubulinxyz:latest`                 | FastAPI on port 8000. Read-only API the frontend talks to. |
 | bootstrap  | `ghcr.io/rtviii/tubulinxyz:latest` (same image)    | One-shot init script. Runs `scripts/init_and_seed.sh` once at deploy time, then sleeps forever. |
 | scheduler  | `ghcr.io/rtviii/tubulinxyz:latest` (same image)    | `cron -f` daemon. Runs `weekly-ingest` every Sunday 3am UTC. |

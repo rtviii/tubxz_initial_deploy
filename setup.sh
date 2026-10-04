@@ -69,7 +69,6 @@ done < "$ENV_FILE"
 required_vars=(
     NEO4J_USER
     NEO4J_PASSWORD
-    NEO4J_CURRENTDB
     SECRET_KEY
     TUBETL_DATA_HOST
 )
